@@ -7,7 +7,11 @@
     
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+    <!-- Noto Sans JP から LINE Seed JP (Google Fonts公式) に変更 -->
+    <link href="https://fonts.googleapis.com/css2?family=LINE+Seed+JP:wght@400;700&display=swap" rel="stylesheet">
+    
+    <!-- YakuHanJP を追加 -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/yakuhanjp@3.4.1/dist/css/yakuhanjp.min.css">
     
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -20,7 +24,8 @@
                         dark: '#1e293b',
                     },
                     fontFamily: {
-                        sans: ['"Noto Sans JP"', 'sans-serif'],
+                        // Noto Sans JP から LINE Seed JP に変更
+                        sans: ['YakuHanJP', '"LINE Seed JP"', 'sans-serif'],
                         mono: ['"Fira Code"', '"JetBrains Mono"', 'Menlo', 'Monaco', 'Consolas', 'monospace'],
                     }
                 }
@@ -160,12 +165,25 @@
         <!-- 右側：保存済みリスト -->
         <div class="lg:col-span-5">
             <div class="bg-white rounded-2xl shadow-sm border border-slate-200 h-full overflow-hidden flex flex-col">
-                <div class="p-5 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
-                    <h2 class="font-bold text-slate-800 flex items-center">
-                        <svg class="w-5 h-5 mr-2 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"></path></svg>
-                        マイブックマークレット
-                    </h2>
-                    <span id="listCount" class="text-xs font-bold text-white bg-slate-400 px-2 py-0.5 rounded-full">0</span>
+                <div class="p-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
+                    <div class="flex items-center">
+                        <h2 class="font-bold text-slate-800 flex items-center text-sm sm:text-base">
+                            <svg class="w-5 h-5 mr-1.5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"></path></svg>
+                            マイリスト
+                        </h2>
+                        <span id="listCount" class="ml-2 text-[10px] font-bold text-white bg-slate-400 px-2 py-0.5 rounded-full">0</span>
+                    </div>
+                    <div class="flex space-x-2">
+                        <label class="cursor-pointer text-[10px] font-bold text-slate-600 hover:text-primary transition-colors flex items-center bg-white border border-slate-200 px-2 py-1.5 rounded-lg shadow-sm">
+                            <svg class="w-3.5 h-3.5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+                            読込
+                            <input type="file" class="hidden" accept=".json" onchange="handleImport(event)">
+                        </label>
+                        <button onclick="exportData()" class="text-[10px] font-bold text-slate-600 hover:text-primary transition-colors flex items-center bg-white border border-slate-200 px-2 py-1.5 rounded-lg shadow-sm">
+                            <svg class="w-3.5 h-3.5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                            保存
+                        </button>
+                    </div>
                 </div>
                 
                 <div id="bookmarkletList" class="p-3 overflow-y-auto flex-1 space-y-3 bg-slate-50/50 min-h-[400px]">
@@ -537,6 +555,58 @@ if (count > 0) {
             }
             
             showToast('削除しました');
+        }
+
+        function exportData() {
+            if (bookmarks.length === 0) return showToast('エクスポートするデータがありません');
+            const dataStr = JSON.stringify(bookmarks, null, 2);
+            const blob = new Blob([dataStr], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `bkmk_studio_backup_${Date.now()}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+            showToast('バックアップファイル(JSON)を保存しました');
+        }
+
+        function handleImport(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const importedData = JSON.parse(e.target.result);
+                    if (!Array.isArray(importedData)) throw new Error('Invalid format');
+
+                    let added = 0, updated = 0;
+                    importedData.forEach(item => {
+                        if (!item.id || !item.code) return; // 簡易バリデーション
+                        
+                        const existingIdx = bookmarks.findIndex(b => b.id === item.id);
+                        if (existingIdx > -1) {
+                            // 既存のデータより新しければ更新
+                            if (item.updatedAt > bookmarks[existingIdx].updatedAt) {
+                                bookmarks[existingIdx] = item;
+                                updated++;
+                            }
+                        } else {
+                            bookmarks.push(item);
+                            added++;
+                        }
+                    });
+
+                    saveToLocalStorage();
+                    renderList();
+                    showToast(`${added}件追加, ${updated}件更新しました`);
+                } catch (err) {
+                    console.error(err);
+                    showToast('ファイルの読み込みに失敗しました');
+                }
+                event.target.value = ''; // Reset input
+            };
+            reader.readAsText(file);
         }
 
         function renderList() {
